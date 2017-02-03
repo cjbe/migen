@@ -4,20 +4,10 @@ Clock domain crossing module
 
 from migen.fhdl.structure import *
 from migen.fhdl.module import Module
-from migen.fhdl.specials import Special
+from migen.fhdl.specials import Special, Memory
 from migen.fhdl.bitcontainer import value_bits_sign
 from migen.genlib.misc import WaitTimer
-
-
-class NoRetiming(Special):
-    def __init__(self, reg):
-        Special.__init__(self)
-        self.reg = reg
-
-    # do nothing
-    @staticmethod
-    def lower(dr):
-        return Module()
+from migen.genlib.resetsync import AsyncResetSynchronizer
 
 
 class MultiRegImpl(Module):
@@ -37,7 +27,8 @@ class MultiRegImpl(Module):
             sd += reg.eq(src)
             src = reg
         self.comb += self.o.eq(src)
-        self.specials += [NoRetiming(reg) for reg in self.regs]
+        for reg in self.regs:
+            reg.attr.add("no_retiming")
 
 
 class MultiReg(Special):
@@ -117,6 +108,7 @@ class BusSynchronizer(Module):
             ibuffer = Signal(width)
             obuffer = Signal(width)
             sync_i += If(self._pong.o, ibuffer.eq(self.i))
+            ibuffer.attr.add("no_retiming")
             self.specials += MultiReg(ibuffer, obuffer, odomain)
             sync_o += If(self._ping.o, self.o.eq(obuffer))
 
@@ -157,3 +149,47 @@ class GrayDecoder(Module):
         for i in reversed(range(width-1)):
             self.comb += o_comb[i].eq(o_comb[i+1] ^ self.i[i])
         self.sync += self.o.eq(o_comb)
+
+
+class ElasticBuffer(Module):
+    def __init__(self, width, depth, idomain, odomain):
+        self.din = Signal(width)
+        self.dout = Signal(width)
+
+        # # #
+
+        reset = Signal()
+        cd_write = ClockDomain()
+        cd_read = ClockDomain()
+        self.comb += [
+            cd_write.clk.eq(ClockSignal(idomain)),
+            cd_read.clk.eq(ClockSignal(odomain)),
+            reset.eq(ResetSignal(idomain) | ResetSignal(odomain))
+        ]
+        self.specials += [
+            AsyncResetSynchronizer(cd_write, reset),
+            AsyncResetSynchronizer(cd_read, reset)
+        ]
+        self.clock_domains += cd_write, cd_read
+
+        wrpointer = Signal(max=depth, reset=depth//2)
+        rdpointer = Signal(max=depth)
+
+        storage = Memory(width, depth)
+        self.specials += storage
+
+        wrport = storage.get_port(write_capable=True, clock_domain="write")
+        rdport = storage.get_port(clock_domain="read")
+        self.specials += wrport, rdport
+
+        self.sync.write += wrpointer.eq(wrpointer + 1)
+        self.sync.read += rdpointer.eq(rdpointer + 1)
+
+        self.comb += [
+            wrport.we.eq(1),
+            wrport.adr.eq(wrpointer),
+            wrport.dat_w.eq(self.din),
+
+            rdport.adr.eq(rdpointer),
+            self.dout.eq(rdport.dat_r)
+        ]

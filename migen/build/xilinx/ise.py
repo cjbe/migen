@@ -119,12 +119,19 @@ bitgen {bitgen_opt} {build_name}.ncd {build_name}.bit{fail_stmt}
     build_script_file = "build_" + build_name + script_ext
     tools.write_to_file(build_script_file, build_script_contents, force_unix=False)
     command = shell + [build_script_file]
-    r = subprocess.call(command)
+    r = tools.subprocess_call_filtered(command, common.colors)
     if r != 0:
         raise OSError("Subprocess failed")
 
 
 class XilinxISEToolchain:
+    attr_translate = {
+        "keep": ("keep", "true"),
+        "no_retiming": ("register_balancing", "no"),
+        "async_reg": None,
+        "no_shreg_extract": ("shreg_extract", "no")
+    }
+
     def __init__(self):
         self.xst_opt = """-ifmt MIXED
 -use_new_parser yes
@@ -152,7 +159,7 @@ class XilinxISEToolchain:
         ngdbuild_opt = self.ngdbuild_opt
         vns = None
 
-        tools.mkdir_noerror(build_dir)
+        os.makedirs(build_dir, exist_ok=True)
         cwd = os.getcwd()
         os.chdir(build_dir)
         try:

@@ -74,6 +74,13 @@ Replications
 ============
 
 The ``Replicate`` object represents the equivalent of {count{expression}} in Verilog.
+For example, the expression: ::
+
+  Replicate(0, 4)
+
+is equivalent to::
+
+  Cat(0, 0, 0, 0)
 
 Statements
 **********
@@ -141,6 +148,8 @@ and write it with: ::
   my_2d_array[x][y].eq(inp)
 
 Since they have no direct equivalent in Verilog, ``Array`` objects are lowered into multiplexers and conditional statements before the actual conversion takes place. Such lowering happens automatically without any user intervention.
+
+Any out-of-bounds access performed on an ``Array`` object will refer to the last element.
 
 Specials
 ********
@@ -211,13 +220,6 @@ Options to ``get_port`` are:
 * ``clock_domain`` (default: ``"sys"``): the clock domain used for reading and writing from this port.
 
 Migen generates behavioural V*HDL code that should be compatible with all simulators and, if the number of ports is <= 2, most FPGA synthesizers. If a specific code is needed, the memory handler can be overriden using the appropriate parameter of the V*HDL conversion function.
-
-Inline synthesis directives
-===========================
-
-Inline synthesis directives (pseudo-comments such as ``// synthesis attribute keep of clock_signal_name is true``) are supported using the ``SynthesisDirective`` object. Its constructor takes as parameters a string containing the body of the directive, and optional keyword parameters that are used to replace signal names similarly to the Python string method ``format``. The above example could be represented as follows: ::
-
-  SynthesisDirective("attribute keep of {clksig} is true", clksig=clock_domain.clk)
 
 Modules
 *******
